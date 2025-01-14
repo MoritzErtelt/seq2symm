@@ -65,29 +65,37 @@ def run_predictions(input_file, output_file, chkpt_file, batch_size):
     trainer = Trainer(accelerator="cuda" if torch.cuda.is_available() else "cpu", max_epochs=params.n_epoch)
 
     # Run prediction
-    predictions = trainer.predict(model=task, dataloaders=[dataloader.test_dataloader()])
+    with torch.no_grad():
+        predictions = trainer.predict(model=task, dataloaders=[dataloader.test_dataloader()])
 
     # Save predictions to the output CSV file
     with open(output_file, 'w', newline='') as csvfile:
         writer = csv.writer(csvfile)
         writer.writerow(['fasta_id', 'predicted_oligomerization_state'])
 
-        for pred in predictions:
-            pred_state = pred[1]
-            fasta_id = pred[0][0]
-            pred_state = pred_state.squeeze(0)
+        for batch in predictions:
+            fasta_ids, pred_states = batch[0], batch[1]  # Extract batch of fasta IDs and prediction tensors
 
-            # Calculate softmax probabilities for all oligomerization states
-            probabilities = torch.softmax(pred_state, dim=0).tolist()
+            for fasta_id, pred_state in zip(fasta_ids, pred_states):
+                pred_state = pred_state.squeeze(0)  # Remove batch dimension if it exists
 
-            # Map probabilities to oligomerization states and filter out very small values
-            symm_probs = {joint_label_to_symm_map[i]: round(prob, 4) for i, prob in enumerate(probabilities) if prob >= 0.01}
+                # Calculate softmax probabilities for the oligomerization states
+                probabilities = torch.softmax(pred_state, dim=0).tolist()  # Convert to a list
 
-            # Sort the oligomerization states by probability
-            sorted_symm_probs = dict(sorted(symm_probs.items(), key=lambda item: item[1], reverse=True))
+                # Map probabilities to oligomerization states, filtering out very small probabilities
+                symm_probs = {
+                    joint_label_to_symm_map[i]: round(prob, 4) 
+                    for i, prob in enumerate(probabilities) 
+                    if isinstance(prob, (float, int)) and prob >= 0.01
+                }
+    
+                # Sort the oligomerization states by probability
+                sorted_symm_probs = dict(sorted(symm_probs.items(), key=lambda item: item[1], reverse=True))
+    
+                # Write to the CSV file
+                writer.writerow([fasta_id, str(sorted_symm_probs)])
 
-            # Write to the CSV file
-            writer.writerow([fasta_id, str(sorted_symm_probs)])
+
 
 # Main execution
 if __name__ == "__main__":
