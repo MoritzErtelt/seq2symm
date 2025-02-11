@@ -35,7 +35,7 @@ from lightning.pytorch import LightningModule
 from lightning.pytorch import Trainer
 from lightning.pytorch.strategies import DDPStrategy
 from torchmetrics import MetricCollection
-from torchmetrics.classification import Precision, Recall, AveragePrecision, ConfusionMatrix, ROC 
+from torchmetrics.classification import Precision, Recall, AveragePrecision, ConfusionMatrix, ROC
 
 
 from lightning.pytorch.callbacks import ModelCheckpoint
@@ -56,7 +56,7 @@ random.seed(seed)
 torch.manual_seed(seed)
 if torch.cuda.is_available():
     torch.cuda.manual_seed_all(seed)
-    
+
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print('Current device: ' + str(device),flush=True)
 
@@ -123,7 +123,7 @@ def entropy_minimization_loss(predictions, temperature=1.0):
     # Apply softmax to the predictions
     softmax_preds = F.softmax(predictions / temperature, dim=1)
     # Calculate the negative log likelihood loss
-    loss = -torch.mean(torch.sum(softmax_preds * torch.log(softmax_preds + 1e-10), dim=1))  
+    loss = -torch.mean(torch.sum(softmax_preds * torch.log(softmax_preds + 1e-10), dim=1))
     return loss
 
 
@@ -165,13 +165,13 @@ class MultiLabelRankingLossWithIndicatorTarget(nn.Module):
         for i in range(logits.shape[0]):
             # Indices of positive and negative labels
             positive_indices = target[i].nonzero().view(-1)
-            negative_indices = (1 - target[i]).nonzero().view(-1)         
+            negative_indices = (1 - target[i]).nonzero().view(-1)
             positive_vals = [probs[i,p] for p in positive_indices]
             negative_vals = [probs[i,n] for n in negative_indices]
             # Calculate pairwise ranking loss for positive and negative pairs
-            pairs = torch.tensor(list(product(positive_vals, negative_vals)))  
+            pairs = torch.tensor(list(product(positive_vals, negative_vals)))
             ranking_loss += F.margin_ranking_loss(input1=pairs[:,0],  ## max(0, input1-input2)
-                                                input2=pairs[:,1], 
+                                                input2=pairs[:,1],
                                                 target=torch.ones(pairs.shape[0]), margin=self.margin)
         # Average the ranking loss over the batch
         ranking_loss /= logits.shape[0]
@@ -191,14 +191,14 @@ class MultiLabelRankingLossWithSoftTarget(nn.Module):
         probs = torch.sigmoid(logits)
         # Calculate ranking loss for each sample
         ranking_loss = 0
-        for i in range(logits.shape[0]):            
+        for i in range(logits.shape[0]):
             # Generate all pairs of elements
             pairs = list(product(range(n_classes), repeat=2))
             # Filter pairs where x > y
             valid_pairs = torch.tensor([(probs[i, x], probs[i, y]) for x, y in pairs if target[i][x] > target[i][y]])
             # Calculate pairwise ranking loss
-            ranking_loss += F.margin_ranking_loss(input1=valid_pairs[:,0], 
-                                                input2=valid_pairs[:,1], 
+            ranking_loss += F.margin_ranking_loss(input1=valid_pairs[:,0],
+                                                input2=valid_pairs[:,1],
                                                 target=torch.ones(valid_pairs.shape[0]), margin=self.margin)
         # Average the ranking loss over the batch
         ranking_loss /= logits.shape[0]
@@ -220,7 +220,7 @@ class RobertaLMHead(nn.Module):
         x = gelu(x)
         x = self.dropout(x)  # Dropout applied after activation
         x = self.layer_norm(x)
-        # average over residues in protein.. 
+        # average over residues in protein..
         x = x.mean(1)
         x = self.dense2(x)
         return x
@@ -230,8 +230,8 @@ class RobertaLMHeadDeeper(nn.Module):
     """Head for masked language modeling.
      Example usage:
      esm2_model.lm_head = RobertaLMHeadDeeper(embed_dim=ESM2_EMBEDDINGS_SIZE, hidden_dim=[256,50],
-          output_dim=self.n_classes, dropout_rate=0.2)        
-    #"""        
+          output_dim=self.n_classes, dropout_rate=0.2)
+    #"""
 
     def __init__(self, embed_dim, hidden_dim, output_dim, dropout_rate=0.1):
         super().__init__()
@@ -240,14 +240,14 @@ class RobertaLMHeadDeeper(nn.Module):
         self.layer_norm1 = ESM1bLayerNorm(hidden_dim[0])
         self.dense2 = nn.Linear(hidden_dim[0], hidden_dim[1])
         self.layer_norm2 = ESM1bLayerNorm(hidden_dim[1])
-        self.dense3 = nn.Linear(hidden_dim[1], output_dim)        
+        self.dense3 = nn.Linear(hidden_dim[1], output_dim)
 
     def forward(self, features):   ## ESM2 features size: torch.Size([1, N, 1280])
         x = self.dense1(features)
         x = gelu(x)
         x = self.dropout(x)  # Dropout applied after activation
         x = self.layer_norm1(x)
-        # average over residues in protein.. 
+        # average over residues in protein..
         x = x.mean(1)
         x = self.dense2(x)
         x = gelu(x)
@@ -263,7 +263,7 @@ class MultiheadedRobertaLMHead(nn.Module):
                     embed_dim,
                     hidden_layer_sizes=[256, 100],
                     output_dim=20):
-        
+
         super().__init__()
 
         n_classes = output_dim
@@ -280,7 +280,7 @@ class MultiheadedRobertaLMHead(nn.Module):
 
 
     def forward(self, features):
-        x = self.common_head(features)     
+        x = self.common_head(features)
         x = self.layer_norm1(gelu(x))
 
         self.fine_heads_one_per_class = self.fine_heads_one_per_class.to(features.device)
@@ -293,14 +293,14 @@ class MultiheadedNoSharedRobertaLMHead(nn.Module):
     """
     Example usage:
     esm2_model.lm_head = MultiheadedNoSharedRobertaLMHead(
-        embed_dim=ESM2_EMBEDDINGS_SIZE, hidden_layer_sizes=[256], 
-        output_dim=self.n_classes, dropout_rate=0.2)  
+        embed_dim=ESM2_EMBEDDINGS_SIZE, hidden_layer_sizes=[256],
+        output_dim=self.n_classes, dropout_rate=0.2)
     """
     def __init__(self,
                     embed_dim,
                     hidden_layer_sizes=[256],
                     output_dim=20, dropout_rate=0.2):
-        
+
         super().__init__()
 
         n_classes = output_dim
@@ -322,7 +322,7 @@ class MultiheadedNoSharedRobertaLMHead(nn.Module):
 
 class ESMFinetuner(LightningModule):
     ## params: n_classes=17, n_epoch=100, lr=1.0e-4, l2_coeff=1.0e-2, interactive=False):
-    def __init__(self, params, **kwargs: Any) -> None:  
+    def __init__(self, params, **kwargs: Any) -> None:
 
         super().__init__()
 
@@ -360,17 +360,17 @@ class ESMFinetuner(LightningModule):
     def set_loss_and_metrics(self):
         if self.params.use_margin_loss:
             if self.params.use_soft_labels:
-                self.loss = nn.CrossEntropyLoss() 
+                self.loss = nn.CrossEntropyLoss()
                 self.margin_loss = MultiLabelRankingLossWithSoftTarget()
             else:
-                self.loss = nn.BCEWithLogitsLoss()        
+                self.loss = nn.BCEWithLogitsLoss()
                 self.margin_loss = MultiLabelRankingLossWithIndicatorTarget()
         else:
-            self.loss = nn.BCEWithLogitsLoss()        
+            self.loss = nn.BCEWithLogitsLoss()
 
         self.train_metrics_set1 = MetricCollection(
             [
-                AveragePrecision(task="multilabel", num_labels=self.n_classes, num_classes=self.n_classes, average='none')              
+                AveragePrecision(task="multilabel", num_labels=self.n_classes, num_classes=self.n_classes, average='none')
             ],
             prefix="train_set1",
         )
@@ -385,7 +385,7 @@ class ESMFinetuner(LightningModule):
         self.val_metrics_set1 = self.train_metrics_set1.clone(prefix="val_set1")
         self.val_metrics_set2 = self.train_metrics_set2.clone(prefix="val_set2")
         self.test_metrics_set1 = self.train_metrics_set1.clone(prefix="test_set1")
-        self.test_metrics_set2 = self.train_metrics_set2.clone(prefix="test_set2")       
+        self.test_metrics_set2 = self.train_metrics_set2.clone(prefix="test_set2")
         self.save_hyperparameters()
 
 
@@ -405,7 +405,7 @@ class ESMFinetuner(LightningModule):
             for param in esm2_model.layers[ii].parameters():
                 param.requires_grad = False
 
-        print('Number of parameters being optimized: ',count_parameters(esm2_model))
+        #print('Number of parameters being optimized: ',count_parameters(esm2_model))
         self.batch_converter = alphabet.get_batch_converter()
         return esm2_model
 
@@ -418,7 +418,7 @@ class ESMFinetuner(LightningModule):
             output from the model
         """
         return self.model(*args, **kwargs)
-    
+
 
     def configure_optimizers(self):
         """Initialize the optimizer and learning rate scheduler.
@@ -464,7 +464,7 @@ class ESMFinetuner(LightningModule):
         # Threshold probabilities to obtain binary predictions (0 or 1)
         pred_labels = cast(Tensor, (probs >= 0.5).float())
         # compute second set that uses predictions
-        self.train_metrics_set2(pred_labels, y.int())        
+        self.train_metrics_set2(pred_labels, y.int())
 
         # by default, the train step logs every `log_every_n_steps` steps where
         # `log_every_n_steps` is a parameter to the `Trainer` object
@@ -478,7 +478,7 @@ class ESMFinetuner(LightningModule):
     # changing each element from a list of two tuples to a single tuple
     def conv_to_tuples(self, inlist):
         return list(map(lambda x: tuple((x[0][0],x[1][0])), inlist))
- 
+
 
     def validation_step(self, batch, batch_idx):
         """Compute validation loss.
@@ -487,7 +487,7 @@ class ESMFinetuner(LightningModule):
         """
         x = batch["x"]
         y = batch["y"]
-        
+
         x = x.to(next(self.model.parameters()).device)
 
         output = self(x)
@@ -496,7 +496,7 @@ class ESMFinetuner(LightningModule):
 
         if self.params.use_margin_loss:
             loss2 = self.margin_loss(logits_homomer, y)
-            loss = loss + loss2        
+            loss = loss + loss2
 
         if self.params.use_soft_labels:
             y_soft = y.clone()
@@ -533,11 +533,11 @@ class ESMFinetuner(LightningModule):
         loss = self.loss(logits_homomer, y)
         if self.params.use_margin_loss:
             loss2 = self.margin_loss(logits_homomer, y)
-            loss = loss + loss2        
+            loss = loss + loss2
 
         if self.params.use_soft_labels:
             y_soft = y.clone()
-            y = (y>0).int()        
+            y = (y>0).int()
 
         self.test_metrics_set1(logits_homomer, y.int())
         # Convert logits to probabilities using sigmoid activation
@@ -548,38 +548,50 @@ class ESMFinetuner(LightningModule):
         # by default, the test and validation steps only log per *epoch*
         self.log("test_loss", loss, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True)
         if batch_idx % (N_PRINT_TRAIN) == 0:
-            print("\n[LOG] Epoch:",self.current_epoch," Batch:",batch_idx,"test_loss",loss.cpu().detach().numpy())        
+            print("\n[LOG] Epoch:",self.current_epoch," Batch:",batch_idx,"test_loss",loss.cpu().detach().numpy())
         self.test_metrics_set2(pred_labels, y.int())
 
-        return loss      
+        return loss
 
 
     def predict_step(self, batch, batch_idx, dataloader_idx=0):
         x = batch["x"]
         y = batch["y"]
         pdbids = batch["pdbids"]
-        
+
         x = x.to(next(self.model.parameters()).device)
 
-        output = self(x)
-        logits_homomer = output['logits']
+        # Run inference in a single step (gets both logits & contacts)
+        output = self.model(x, return_contacts=True)
 
-        """ Uncomment the code below to get embeddings
-        output = self(x, repr_layers=[31])
-        logits_homomer = output['representations'][31]
-        logits_homomer = logits_homomer.mean(1)
-        """
+        logits_homomer = output["logits"]
+        contact_maps = output["contacts"]
 
-        return pdbids, logits_homomer, y
+        # Get padding and special token indices
+        padding_idx = self.model.alphabet.padding_idx
+        cls_idx = self.model.alphabet.cls_idx
+        eos_idx = self.model.alphabet.eos_idx
 
-   
+        # Remove CLS, EOS, and padding from contact maps
+        filtered_contacts = []
+        for i, contact_map in enumerate(contact_maps):
+            mask = (x[i] != padding_idx) & (x[i] != cls_idx) & (x[i] != eos_idx)
+            mask = mask.cpu().numpy()[1:-1]  # Remove CLS/EOS (already removed from ESM2 contacts)
+            contact_map_filtered = contact_map[mask][:, mask]  # Keep only valid residues
+            filtered_contacts.append(contact_map_filtered)
+
+
+        return pdbids, logits_homomer, filtered_contacts, y
+
+
+
     def save_results(self, epoch, metrics_dict, prefix):
         res = np.concatenate([
             val.cpu().detach().numpy().tolist()
             for val in metrics_dict.values()
         ]).tolist()
         res = [epoch] + res
-        
+
         with open(format("%s/%s_results.csv" % (self.params.output_dir, prefix)),'a') as fin:
             fin.write(",".join([str(x) for x in res]))
             fin.write('\n')
@@ -588,11 +600,11 @@ class ESMFinetuner(LightningModule):
 
     @torch.no_grad()
     def on_test_epoch_end(self) -> None:
-        """Logs epoch level test metrics."""      
+        """Logs epoch level test metrics."""
         metrics_dict = self.test_metrics_set1.compute()
         self.test_metrics_set2.compute()
         for (m, val) in metrics_dict.items():
-            print(m,val)            
+            print(m,val)
             print('\n[LOG] Test performance: ',m, ' Avg perf:',val.nanmean().cpu().detach().numpy(),
                   'Class-wise:'," ".join([str(x) for x in val.cpu().detach().numpy().tolist()]))
             self.log(m, val.nanmean(), sync_dist=True)
@@ -602,7 +614,7 @@ class ESMFinetuner(LightningModule):
 
 
     def on_train_epoch_end(self) -> None:
-        """Logs epoch level training metrics."""       
+        """Logs epoch level training metrics."""
         metrics_dict = self.train_metrics_set1.compute()
         self.train_metrics_set2.compute()
         for (m, val) in metrics_dict.items():
@@ -616,15 +628,15 @@ class ESMFinetuner(LightningModule):
 
 
     def on_validation_epoch_end(self) -> None:
-        """Logs epoch level validation metrics."""      
+        """Logs epoch level validation metrics."""
         metrics_dict = self.val_metrics_set1.compute()
         self.val_metrics_set2.compute()
         for (m, val) in metrics_dict.items():
-            print(m,val)            
+            print(m,val)
             print('\n[LOG] Validation performance: ',m, ' Avg perf:',val.nanmean().cpu().detach().numpy(),
                   'Class-wise:'," ".join([str(x) for x in val.cpu().detach().numpy().tolist()]))
-            self.log(m, val.nanmean(), sync_dist=True)    
-        
+            self.log(m, val.nanmean(), sync_dist=True)
+
         self.save_results(self.current_epoch, metrics_dict, 'validation')
         self.val_metrics_set1.reset()
         self.val_metrics_set2.reset()
@@ -648,7 +660,7 @@ def compute_sklearn_metrics_old(list_of_tuples, splitid, granularity, out_dir):
     else:
         label_map = joint_label_to_symm_map
     labels_in_this_split = [label_map[l] for l in range(y_true.shape[1])]
-    y_pred = (torch.sigmoid(y_pred) >= 0.5).float()  
+    y_pred = (torch.sigmoid(y_pred) >= 0.5).float()
     report = metrics.classification_report(y_true=y_true, y_pred=y_pred, target_names=labels_in_this_split, zero_division=0)
     print('[sklearn] Performance on:',splitid,'\n',report)
     cnf = metrics.multilabel_confusion_matrix(y_true=y_true, y_pred=y_pred, labels=labels_in_this_split)
@@ -662,7 +674,7 @@ def compute_sklearn_metrics(list_of_tuples, splitid, params):
     y_true = []
     y_pred = []
     y_true_cnf = []
-    y_pred_cnf = []    
+    y_pred_cnf = []
     for pdbid, pred, label in list_of_tuples:
         y_true.append(label)
         y_pred.append(pred)
@@ -686,7 +698,7 @@ def compute_sklearn_metrics(list_of_tuples, splitid, params):
     else:
         label_map = joint_label_to_symm_map
     labels_in_this_split = [label_map[l] for l in range(y_true.shape[1])]
-    y_pred = (torch.sigmoid(y_pred) >= 0.5).float()  
+    y_pred = (torch.sigmoid(y_pred) >= 0.5).float()
     report = metrics.classification_report(y_true=y_true, y_pred=y_pred, target_names=labels_in_this_split, zero_division=0)
     print('[sklearn] Performance on:',splitid,'\n',report)
 
@@ -709,16 +721,16 @@ if __name__ == "__main__":
     parser.add_argument('--limit', type=int, default=65536, required=False, help='limit size of dataset per gpu')
     parser.add_argument('--weighted_sampler', type=int, default=0, required=False, help='use weighted sampler for training [0=None, 1=cluster-size-based]')
     parser.add_argument('--num_layers_frozen', type=int, default=31, required=False, help='number of layers to freeze in ESM2')
-    parser.add_argument('--granularity', type=int, required=True, default=2, help='coarse=1 fine=2 both=3')    
-    parser.add_argument('--use_soft_labels', type=int, required=False, default=0, help='use soft labels or not')    
-    parser.add_argument('--use_margin_loss', type=int, required=False, default=0, help='use margin loss')    
+    parser.add_argument('--granularity', type=int, required=True, default=2, help='coarse=1 fine=2 both=3')
+    parser.add_argument('--use_soft_labels', type=int, required=False, default=0, help='use soft labels or not')
+    parser.add_argument('--use_margin_loss', type=int, required=False, default=0, help='use margin loss')
     parser.add_argument('--checkpoint_path', type=str, required=False, help='path to checkpoint file')
-    
+
     start_time = time.time()
-    
+
     params = parser.parse_args()
     print(params,flush=True)
-    
+
     task = ESMFinetuner(params=params)
     dataloader = CoarseNFineJointDataLoader(params=params, collater=task.batch_converter)
     checkpoint_callback = ModelCheckpoint(dirpath=format('%s/%s' % (params.model_dir,params.output_model)), save_top_k=-1, auto_insert_metric_name=True, monitor='validation_loss')
@@ -735,13 +747,13 @@ if __name__ == "__main__":
         print('Reading checkpoint from..',params.checkpoint_path)
         trainer.fit(model=task, datamodule=dataloader,ckpt_path=params.checkpoint_path)
     else:
-        trainer.fit(model=task, datamodule=dataloader)  
+        trainer.fit(model=task, datamodule=dataloader)
 
 
     predictions = trainer.predict(model=task, dataloaders=[dataloader.val_dataloader()])
     with open(format('%s/val_predictions.pkl' % params.output_dir), 'wb') as fout:
         pickle.dump(predictions, fout)
-    compute_sklearn_metrics(predictions,'validation',params)        
+    compute_sklearn_metrics(predictions,'validation',params)
 
     predictions = trainer.predict(model=task, dataloaders=[dataloader.test_dataloader()])
     with open(format('%s/test_predictions.pkl' % params.output_dir), 'wb') as fout:
