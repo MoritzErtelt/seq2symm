@@ -1,8 +1,7 @@
 # Introduction 
-Source code for 
-Seq2Symm: Rapid and accurate prediction of protein homo-oligomer symmetry
+Source code for Seq2Symm: Rapid and accurate prediction of protein homo-oligomer symmetry
 
-Rapid prediction of homo-oligomer symmetries using a single sequence as input
+Seq2Symm takes a single sequence as input
 
 # Getting Started
 Dependencies are in the yaml file esm2_finetune.yaml
@@ -18,6 +17,11 @@ conda env create --name esm2 --file=esm2_finetune.yaml
   
   2.  the trained model
       http://files.ipd.uw.edu/pub/seq2symm/ESM2_model.ckpt
+
+  3.  data download links are here
+      https://github.com/microsoft/seq2symm/tree/main/datasets
+
+      All code, datasets, model, predictions are also available on Zenodo: http://doi.org/10.5281/zenodo.14659968
       
 
 # Training the model
@@ -28,6 +32,7 @@ python src/finetune.py --meta_data_file ../datasets/homomer_pdbids_hash_clusteri
 
 # Predicting using the model
 
+## Jupyternotebook
 A jupyter notebook is available at src/load_chkpt_and_predict.ipynb that shows examples of how this is done for two different file formats
 
 ## Predicting via command line
