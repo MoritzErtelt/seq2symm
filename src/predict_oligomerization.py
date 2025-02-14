@@ -31,6 +31,7 @@ def parse_args():
     parser.add_argument('-output_file', type=str, default="./results.csv", help='Output CSV file to save predictions')
     parser.add_argument('-chkpt_file', type=str, required=True, help='Path to the model checkpoint file')
     parser.add_argument('-batch_size', type=int, default=1, help='Batch size for processing sequences (default: 1)')
+    parser.add_argument('-keep_additional_model_on_cpu', type=bool, default=True, help="Keep an additional model on CPU for handling OOM cases")
     return parser.parse_args()
 
 
@@ -61,7 +62,7 @@ def compute_pseudo_contact_order(contact_map, threshold=0.5):
 
 
 # Function to run predictions
-def run_predictions(input_file, output_file, chkpt_file, batch_size):
+def run_predictions(input_file, output_file, chkpt_file, batch_size, keep_additional_model_on_cpu):
     # Define model parameters
     class Params:
         def __init__(self):
@@ -87,6 +88,11 @@ def run_predictions(input_file, output_file, chkpt_file, batch_size):
 
     # Load the pre-trained model
     task = task.load_from_checkpoint(params.chkpt_file, map_location=device)
+
+    if keep_additional_model_on_cpu:
+        # add a second model that will stay on the CPU for handling sequences that go GPU OOM
+        task.model_cpu = type(task).load_from_checkpoint(params.chkpt_file, map_location="cpu")
+
     task.eval()  # Set model to evaluation mode
 
     # Initialize the test dataloader for the input FASTA file
@@ -135,5 +141,5 @@ def run_predictions(input_file, output_file, chkpt_file, batch_size):
 # Main execution
 if __name__ == "__main__":
     args = parse_args()
-    run_predictions(args.input_file, args.output_file, args.chkpt_file, args.batch_size)
+    run_predictions(args.input_file, args.output_file, args.chkpt_file, args.batch_size, args.keep_additional_model_on_cpu)
 

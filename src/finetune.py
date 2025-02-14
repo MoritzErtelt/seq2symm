@@ -327,6 +327,7 @@ class ESMFinetuner(LightningModule):
         super().__init__()
 
         self.params = params
+
         if hasattr(params, 'test_mode') and not(params.test_mode):
             self.n_classes = params.n_classes
             self.model_dir = params.model_dir
@@ -559,31 +560,63 @@ class ESMFinetuner(LightningModule):
         y = batch["y"]
         pdbids = batch["pdbids"]
 
-        x = x.to(next(self.model.parameters()).device)
+        use_cpu_fallback = False
 
-        # Run inference in a single step (gets both logits & contacts)
-        output = self.model(x, return_contacts=True)
-
-        logits_homomer = output["logits"]
-        contact_maps = output["contacts"]
-
-        # Get padding and special token indices
+        # Remove padding and special tokens
         padding_idx = self.model.alphabet.padding_idx
         cls_idx = self.model.alphabet.cls_idx
         eos_idx = self.model.alphabet.eos_idx
 
-        # Remove CLS, EOS, and padding from contact maps
-        filtered_contacts = []
-        for i, contact_map in enumerate(contact_maps):
-            mask = (x[i] != padding_idx) & (x[i] != cls_idx) & (x[i] != eos_idx)
-            mask = mask.cpu().numpy()[1:-1]  # Remove CLS/EOS (already removed from ESM2 contacts)
-            contact_map_filtered = contact_map[mask][:, mask]  # Keep only valid residues
-            filtered_contacts.append(contact_map_filtered)
+        try:
+            # Move input to the correct device (GPU or CPU)
+            device = next(self.model.parameters()).device
+            x = x.to(device)
 
+            # Run inference with contacts
+            output = self.model(x, return_contacts=True)
 
-        return pdbids, logits_homomer, filtered_contacts, y
+            logits_homomer = output["logits"]
+            contact_maps = output["contacts"]
+            filtered_contacts = []
+            for i, contact_map in enumerate(contact_maps):
+                mask = (x[i] != padding_idx) & (x[i] != cls_idx) & (x[i] != eos_idx)
+                mask = mask.cpu().numpy()[1:-1]
+                contact_map_filtered = contact_map[mask][:, mask]
+                filtered_contacts.append(contact_map_filtered)
 
+            return pdbids, logits_homomer, filtered_contacts
 
+        except RuntimeError as e:
+            if "CUDA out of memory" in str(e):
+                print(f"[ERROR] CUDA OOM for {pdbids}, retrying on CPU...")
+                torch.cuda.empty_cache()
+
+                # only need to move it once at the start
+                if self.model_cpu.device != torch.device("cpu"):
+                    self.model_cpu.to("cpu")
+
+                try:
+                    x = x.to("cpu")
+                    output = self.model_cpu(x, return_contacts=True)
+
+                    logits_homomer = output["logits"]
+                    contact_maps = output["contacts"]
+
+                    filtered_contacts = []
+                    for i, contact_map in enumerate(contact_maps):
+                        mask = (x[i] != padding_idx) & (x[i] != cls_idx) & (x[i] != eos_idx)
+                        mask = mask.cpu().numpy()[1:-1]
+                        contact_map_filtered = contact_map[mask][:, mask]
+                        filtered_contacts.append(contact_map_filtered)
+
+                    return pdbids, logits_homomer, filtered_contacts
+
+                except Exception as e:
+                    print(f"[ERROR] Failed on CPU for {pdbids}: {e}")
+                    return pdbids, None, None  # Gracefully return None on failure
+            else:
+                print(f"[ERROR] Unexpected error for {pdbids}: {e}")
+                return pdbids, None, None  # Return None for failed sequences
 
     def save_results(self, epoch, metrics_dict, prefix):
         res = np.concatenate([
