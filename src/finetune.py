@@ -74,6 +74,39 @@ def add_weight_decay(model, l2_coeff):
     return [{'params': no_decay, 'weight_decay': 0.0}, {'params': decay, 'weight_decay': l2_coeff}]
 
 
+def compute_pseudo_contact_order(contact_map, threshold=0.5):
+    """
+    Computes the pseudo contact order (PCO).
+
+    Args:
+        contact_map (torch.Tensor): Square (N x N) matrix with attention-based contacts.
+        threshold (float): Minimum value to consider a valid contact.
+
+    Returns:
+        float: Normalized pseudo contact order.
+    """
+
+    N = contact_map.shape[0]  # Number of residues
+
+    # Create indices grid
+    idx = torch.arange(N, device=contact_map.device)
+    i_idx, j_idx = torch.meshgrid(idx, idx, indexing="ij")
+
+    # Mask: Ignore trivial contacts (i - j < 3) and apply threshold
+    valid_mask = (j_idx - i_idx >= 3) & (contact_map >= threshold)
+
+    # Compute absolute distance |i - j|
+    contact_distances = torch.abs(j_idx - i_idx)
+
+    # Select only valid contacts
+    contact_order_sum = contact_distances[valid_mask].sum().float()
+    num_contacts = valid_mask.sum().float()
+
+    # Normalize
+    return (contact_order_sum / (num_contacts * N)).cpu().numpy().item() if num_contacts > 0 else 0.0
+
+
+
 def get_stepwise_decay_schedule_with_warmup(optimizer, num_warmup_steps, num_steps_decay, decay_rate, last_epoch=-1):
     """
     Create a schedule with a learning rate that decreases linearly from the initial lr set in the optimizer to 0, after
@@ -575,16 +608,24 @@ class ESMFinetuner(LightningModule):
             # Run inference with contacts
             output = self.model(x, return_contacts=True)
 
-            logits_homomer = output["logits"]
-            contact_maps = output["contacts"]
-            filtered_contacts = []
-            for i, contact_map in enumerate(contact_maps):
-                mask = (x[i] != padding_idx) & (x[i] != cls_idx) & (x[i] != eos_idx)
-                mask = mask.cpu().numpy()[1:-1]
-                contact_map_filtered = contact_map[mask][:, mask]
-                filtered_contacts.append(contact_map_filtered)
+            #logits_homomer = output["logits"]
 
-            return pdbids, logits_homomer, filtered_contacts
+            probabilities_list = []
+            for logits in output["logits"]:
+                probabilities_list.append(torch.softmax(logits.squeeze(0), dim=0).tolist())
+
+            pcos = []
+            for i, contact_map in enumerate(output["contacts"]):
+                mask = (x[i] != padding_idx) & (x[i] != cls_idx) & (x[i] != eos_idx)
+                mask = mask[1:-1]
+                contact_map_filtered = contact_map[mask][:, mask]
+
+                if contact_map_filtered.device != torch.device("cuda"):
+                    contact_map_filtered.to("cuda")
+
+                pcos.append(compute_pseudo_contact_order(contact_map_filtered))
+
+            return pdbids, probabilities_list, pcos
 
         except RuntimeError as e:
             if "CUDA out of memory" in str(e):
@@ -599,17 +640,19 @@ class ESMFinetuner(LightningModule):
                     x = x.to("cpu")
                     output = self.model_cpu(x, return_contacts=True)
 
-                    logits_homomer = output["logits"]
-                    contact_maps = output["contacts"]
+                    #logits_homomer = output["logits"]
+                    probabilities_list = []
+                    for logits in output["logits"]:
+                        probabilities_list.append(torch.softmax(logits.squeeze(0), dim=0).tolist())
 
-                    filtered_contacts = []
-                    for i, contact_map in enumerate(contact_maps):
+                    pcos = []
+                    for i, contact_map in enumerate(output["contacts"]):
                         mask = (x[i] != padding_idx) & (x[i] != cls_idx) & (x[i] != eos_idx)
                         mask = mask.cpu().numpy()[1:-1]
                         contact_map_filtered = contact_map[mask][:, mask]
-                        filtered_contacts.append(contact_map_filtered)
+                        pcos.append(compute_pseudo_contact_order(contact_map_filtered))
 
-                    return pdbids, logits_homomer, filtered_contacts
+                    return pdbids, probabilities_list, pcos
 
                 except Exception as e:
                     print(f"[ERROR] Failed on CPU for {pdbids}: {e}")

@@ -35,32 +35,6 @@ def parse_args():
     return parser.parse_args()
 
 
-def compute_pseudo_contact_order(contact_map, threshold=0.5):
-    """
-    Computes the normalized pseudo contact order (PCO) from a predicted attention-based contact map.
-
-    Args:
-        contact_map (np.ndarray): A square (N x N) matrix from the model's attention head.
-        threshold (float): Minimum value to consider a valid contact (default: 0.5).
-
-    Returns:
-        float: Normalized pseudo contact order value.
-    """
-
-    N = contact_map.shape[0]  # Number of residues
-    contact_order_sum = 0
-    num_contacts = 0
-
-    for i in range(N):
-        for j in range(i + 3, N):  # Ignore trivial contacts (|i - j| < 3)
-            if contact_map[i, j] >= threshold:
-                contact_order_sum += abs(j - i)
-                num_contacts += 1
-
-    # Normalize by sequence length (N)
-    return (contact_order_sum / (num_contacts * N)) if num_contacts > 0 else 0.0
-
-
 # Function to run predictions
 def run_predictions(input_file, output_file, chkpt_file, batch_size, keep_additional_model_on_cpu):
     # Define model parameters
@@ -111,14 +85,9 @@ def run_predictions(input_file, output_file, chkpt_file, batch_size, keep_additi
         writer.writerow(['fasta_id', 'predicted_oligomerization_state', 'pco'])
 
         for batch in predictions:
-            fasta_ids, pred_states, contact_maps = batch[0], batch[1], batch[2]  # Extract batch of fasta IDs and prediction tensors
+            fasta_ids, probs_lists, pcos = batch[0], batch[1], batch[2]  # Extract batch of fasta IDs and prediction tensors
 
-            for fasta_id, pred_state, contact_map in zip(fasta_ids, pred_states, contact_maps):
-
-                pred_state = pred_state.squeeze(0)  # Remove batch dimension if it exists
-
-                # Calculate softmax probabilities for the oligomerization states
-                probabilities = torch.softmax(pred_state, dim=0).tolist()  # Convert to a list
+            for fasta_id, probabilities, pco in zip(fasta_ids, probs_lists, pcos):
 
                 # Map probabilities to oligomerization states, filtering out very small probabilities
                 symm_probs = {
@@ -129,10 +98,6 @@ def run_predictions(input_file, output_file, chkpt_file, batch_size, keep_additi
 
                 # Sort the oligomerization states by probability
                 sorted_symm_probs = dict(sorted(symm_probs.items(), key=lambda item: item[1], reverse=True))
-
-                # calculate pseudo contact order from attention map contacts
-                pco = compute_pseudo_contact_order(contact_map)
-
                 # Write to the CSV file
                 writer.writerow([fasta_id, str(sorted_symm_probs), str(round(pco,2))])
 
