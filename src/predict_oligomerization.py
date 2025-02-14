@@ -82,15 +82,18 @@ def run_predictions(input_file, output_file, chkpt_file, batch_size):
     params = Params()
     task = ESMFinetuner(params=params)
 
+    # check whether a GPU is available
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+
     # Load the pre-trained model
-    task = task.load_from_checkpoint(params.chkpt_file)
+    task = task.load_from_checkpoint(params.chkpt_file, map_location=device)
     task.eval()  # Set model to evaluation mode
 
     # Initialize the test dataloader for the input FASTA file
     dataloader = TestFASTALoader(params=params, collater=task.batch_converter)
 
     # Initialize the Trainer
-    trainer = Trainer(accelerator="cuda" if torch.cuda.is_available() else "cpu", max_epochs=params.n_epoch)
+    trainer = Trainer(accelerator=device, max_epochs=params.n_epoch)
 
     # Run prediction
     with torch.no_grad():
